@@ -4,7 +4,14 @@ name: Alerta de Releases
 # Repo PUBLICO => minutos ilimitados, entao roda 24/7 de graca.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    # Cron do GitHub e em UTC (Brasil = UTC-3). Resultados saem quase sempre
+    # ANTES da abertura ou DEPOIS do fechamento, entao:
+    #  - FORA do pregao (fim de tarde/noite/madrugada/manha ate 10h BRT): 5 em 5 min
+    #    = UTC 20h-23h  e  0h-12h   (BRT 17h-09h59)
+    - cron: "*/5 0-12,20-23 * * *"
+    #  - DENTRO do pregao (10h-17h BRT, menos releases): de hora em hora
+    #    = UTC 13h-19h
+    - cron: "0 13-19 * * *"
   workflow_dispatch:            # botao "Run workflow" p/ teste manual
 
 permissions:
