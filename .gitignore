@@ -1,0 +1,5 @@
+# NUNCA subir segredos nem logs locais:
+config.json
+*.log
+__pycache__/
+# obs.: state.json FICA versionado de proposito (guarda o que ja foi avisado).
