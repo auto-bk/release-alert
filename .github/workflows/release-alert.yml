@@ -4,14 +4,16 @@ name: Alerta de Releases
 # Repo PUBLICO => minutos ilimitados, entao roda 24/7 de graca.
 on:
   schedule:
-    # Cron do GitHub e em UTC (Brasil = UTC-3). Resultados saem quase sempre
-    # ANTES da abertura ou DEPOIS do fechamento, entao:
-    #  - FORA do pregao (fim de tarde/noite/madrugada/manha ate 10h BRT): 5 em 5 min
-    #    = UTC 20h-23h  e  0h-12h   (BRT 17h-09h59)
-    - cron: "*/5 0-12,20-23 * * *"
-    #  - DENTRO do pregao (10h-17h BRT, menos releases): de hora em hora
-    #    = UTC 13h-19h
-    - cron: "0 13-19 * * *"
+    # Cron do GitHub e SEMPRE em UTC (Brasil = UTC-3). Regra em horario de Brasilia:
+    #  - Seg a Sex, FORA do pregao (17h ate 10h do dia seguinte): a cada 5 min
+    #    (resultados saem nas pontas: pos-fechamento, madrugada, pre-abertura)
+    #  - Seg a Sex, DURANTE o pregao (10h-17h): 1x por hora (poucos releases)
+    #  - Sabado e Domingo: 1x por dia, as 18h
+    #  A sexta roda normal ate a meia-noite; a virada p/ sabado ja entra no fim de semana.
+    - cron: "*/5 3-12,20-23 * * 1-5"   # 5min | Seg-Sex | UTC 3-12 e 20-23  = BRT 0h-9h e 17h-20h
+    - cron: "*/5 0-2 * * 2-6"          # 5min | Ter-Sab | UTC 0h-2h = noites de Seg-Sex (BRT 21h-23h59)
+    - cron: "0 13-19 * * 1-5"          # 1x/hora | Seg-Sex | UTC 13-19 = pregao BRT 10h-16h
+    - cron: "0 21 * * 6,0"             # 1x | Sabado e Domingo | UTC 21h = BRT 18h
   workflow_dispatch:            # botao "Run workflow" p/ teste manual
 
 permissions:
