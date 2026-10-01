@@ -560,8 +560,10 @@ CVM_WATCH = {
 #                              Financeiras ..."  (ou categorias formais ITR/DFP)
 #   Apresentacoes Investidor -> "Comunicado ao Mercado" / tipo "Apresentacoes a
 #                              analistas/agentes do mercado"
-# (Comparacao SEM acento e minuscula via _norm.) REMOVIDOS nesta versao:
-# Comunicado ao Mercado (geral) e Calendario de Eventos - reativar aqui se quiser.
+# (Comparacao SEM acento e minuscula via _norm.) De "Comunicado ao Mercado" entram
+# APENAS os materiais (01/10/2026): Aquisicao/Alienacao de Participacao Relevante e
+# Esclarecimentos a CVM/B3 (+ Apresentacoes). Fora: "Outros Comunicados", "Mudanca
+# de Auditor" e Calendario de Eventos - reativar aqui se quiser.
 def _cvm_wanted(categoria, tipo):
     c = _norm(categoria)
     t = _norm(tipo)
@@ -573,6 +575,10 @@ def _cvm_wanted(categoria, tipo):
         return True
     if c.startswith("dados econ"):                    # Press Release + DFs/ITRs
         return "press" in t or t.startswith("demonstracoes financeiras")
+    if c.startswith("comunicado ao mercado"):         # so os comunicados MATERIAIS
+        # Aquisicao/Alienacao de Participacao Relevante + Esclarecimentos a CVM/B3.
+        # Ficam de fora "Outros Comunicados" e "Mudanca de Auditor" (ruido).
+        return "aquisic" in t or "alienac" in t or "esclarecimento" in t
     return False
 
 
