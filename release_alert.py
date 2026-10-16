@@ -579,6 +579,8 @@ def _cvm_wanted(categoria, tipo):
         # Aquisicao/Alienacao de Participacao Relevante + Esclarecimentos a CVM/B3.
         # Ficam de fora "Outros Comunicados" e "Mudanca de Auditor" (ruido).
         return "aquisic" in t or "alienac" in t or "esclarecimento" in t
+    if c.startswith("aviso aos debenturistas"):       # aviso aos debenturistas (a pedido)
+        return True
     return False
 
 
