@@ -1,19 +1,18 @@
 name: Alerta de Releases
 
-# Roda a cada 5 min (minimo do GitHub; pode atrasar alguns min sob carga).
-# Repo PUBLICO => minutos ilimitados, entao roda 24/7 de graca.
+# Agenda por horario (ver "schedule" abaixo). Repo PUBLICO => minutos ilimitados.
 on:
   schedule:
     # Cron do GitHub e SEMPRE em UTC (Brasil = UTC-3). Regra em horario de Brasilia:
-    #  - Seg a Sex, FORA do pregao (17h ate 10h do dia seguinte): a cada 5 min
-    #    (resultados saem nas pontas: pos-fechamento, madrugada, pre-abertura)
-    #  - Seg a Sex, DURANTE o pregao (10h-17h): 1x por hora (poucos releases)
+    #  - Seg a Sex, FORA do pregao (17h ate 10h do dia seguinte): a cada 30 min
+    #  - Seg a Sex, DURANTE o pregao (10h-17h): 1x por hora
     #  - Sabado e Domingo: 1x por dia, as 18h
     #  A sexta roda normal ate a meia-noite; a virada p/ sabado ja entra no fim de semana.
-    - cron: "*/5 3-12,20-23 * * 1-5"   # 5min | Seg-Sex | UTC 3-12 e 20-23  = BRT 0h-9h e 17h-20h
-    - cron: "*/5 0-2 * * 2-6"          # 5min | Ter-Sab | UTC 0h-2h = noites de Seg-Sex (BRT 21h-23h59)
-    - cron: "0 13-19 * * 1-5"          # 1x/hora | Seg-Sex | UTC 13-19 = pregao BRT 10h-16h
-    - cron: "0 21 * * 6,0"             # 1x | Sabado e Domingo | UTC 21h = BRT 18h
+    #  Minutos :07/:37 (e nao :00/:30) p/ fugir do congestionamento do cron do GitHub.
+    - cron: "7,37 3-12,20-23 * * 1-5"  # 30min | Seg-Sex | UTC 3-12 e 20-23 = BRT 0h-9h e 17h-20h
+    - cron: "7,37 0-2 * * 2-6"         # 30min | Ter-Sab UTC 0h-2h = noites de Seg-Sex (BRT 21h-23h59)
+    - cron: "7 13-19 * * 1-5"          # 1x/hora | Seg-Sex | UTC 13-19 = pregao BRT 10h-16h
+    - cron: "7 21 * * 6,0"             # 1x | Sabado e Domingo | UTC 21h = BRT 18h
   workflow_dispatch:            # botao "Run workflow" p/ teste manual
 
 permissions:
