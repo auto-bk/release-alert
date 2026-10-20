@@ -638,19 +638,36 @@ def http_get_json(url, ua, timeout=40):
 def fetch_edgar(cfg):
     ua = cfg["edgar_user_agent"]
     cutoff = dt.date.today() - dt.timedelta(days=int(cfg.get("edgar_lookback_days", 5)))
-    items = []
+    # Consultas em PARALELO (antes eram ~150 em fila, ~70s por rodada). A SEC
+    # permite ate 10 req/s por usuario; _ritmo() segura em ~8/s com folga.
+    # Mantem a consulta empresa por empresa (cobertura total): o feed de
+    # "ultimos filings" da SEC so traz os ~100 mais recentes e perderia
+    # documentos quando o GitHub fica horas sem rodar.
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    trava = threading.Lock()
+    ultimo = [0.0]
 
-    def scan(ticker, cik, want_form, require_item_202, verify=False, label=None):
+    def _ritmo():
+        with trava:
+            espera = ultimo[0] + 0.125 - time.monotonic()
+            if espera > 0:
+                time.sleep(espera)
+            ultimo[0] = time.monotonic()
+
+    def scan(ticker, cik, want_forms, require_item_202, verify=False, label=None):
+        out = []
         url = f"https://data.sec.gov/submissions/CIK{cik:010d}.json"
+        _ritmo()
         try:
             data = http_get_json(url, ua)
         except Exception as exc:
             log.warning("EDGAR falhou para %s (CIK %s): %s", ticker, cik, exc)
-            return
+            return out
         rec = data.get("filings", {}).get("recent", {})
         forms = rec.get("form", [])
         for i, form in enumerate(forms):
-            if form != want_form:
+            if form not in want_forms:
                 continue
             fdate = rec["filingDate"][i]
             try:
@@ -665,11 +682,10 @@ def fetch_edgar(cfg):
             acc_nodash = acc.replace("-", "")
             when = rec.get("acceptanceDateTime", [fdate])[i]
             url_doc = (f"https://www.sec.gov/Archives/edgar/data/{cik}/"
-                       f"{acc_nodash}/{primary}") if primary else \
-                      (f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/")
+                       f"{acc_nodash}/{primary}") if primary else                       (f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/")
             # 8-K item 2.02 ja e resultado; 6-K precisa checar o CONTEUDO
             # (nomes de arquivo dos estrangeiros sao opacos - ex.: tm2613731d1_6k.htm)
-            items.append({
+            out.append({
                 "id": f"edgar:{acc}",
                 "source": "EDGAR",
                 "company": ticker,
@@ -678,15 +694,18 @@ def fetch_edgar(cfg):
                 "url": url_doc,
                 "verify": verify,
             })
-        time.sleep(0.2)                  # respeita rate-limit da SEC
+        return out
 
-    for tk, cik in EDGAR_8K.items():
-        scan(tk, cik, "8-K", True)
-    for tk, cik in EDGAR_6K.items():
-        scan(tk, cik, "6-K", False, verify=True)
-    for tk, cik in EDGAR_10KQ.items():
-        for frm in ("10-Q", "10-K"):
-            scan(tk, cik, frm, False, verify=False, label="10-Q/10-K (Resultados)")
+    tarefas = [(tk, cik, ("8-K",), True) for tk, cik in EDGAR_8K.items()]
+    tarefas += [(tk, cik, ("6-K",), False, True) for tk, cik in EDGAR_6K.items()]
+    tarefas += [(tk, cik, ("10-Q", "10-K"), False, False, "10-Q/10-K (Resultados)")
+                for tk, cik in EDGAR_10KQ.items()]
+    t0 = time.monotonic()
+    items = []
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for res in ex.map(lambda t: scan(*t), tarefas):
+            items.extend(res)
+    log.info("EDGAR: %d consultas em %.1fs.", len(tarefas), time.monotonic() - t0)
     return items
 
 
