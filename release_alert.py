@@ -995,9 +995,12 @@ def _groq_summarize(prompt, item, cfg):
     if not gq.get("enabled") or not gq.get("api_key"):
         return None
     for modelo in GROQ_MODELOS:
-        for tent in range(2):
-            body = {"model": modelo, "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.2, "max_tokens": 4096, "reasoning_effort": "low"}
+        texto = prompt
+        for tent in range(3):
+            # max_tokens conta no limite de tokens/min do Groq gratis: 2048 sobra
+            # p/ um resumo de 5-10 topicos e deixa espaco p/ documentos grandes.
+            body = {"model": modelo, "messages": [{"role": "user", "content": texto}],
+                    "temperature": 0.2, "max_tokens": 2048, "reasoning_effort": "low"}
             req = urllib.request.Request(
                 "https://api.groq.com/openai/v1/chat/completions",
                 data=json.dumps(body).encode("utf-8"),
@@ -1011,7 +1014,12 @@ def _groq_summarize(prompt, item, cfg):
                     return _clean_md(txt)
                 break                                     # vazio -> proximo modelo
             except urllib.error.HTTPError as exc:
-                if exc.code == 429 and tent == 0:
+                if exc.code == 413 and len(texto) > 4000:
+                    # documento grande (tabelas gastam muitos tokens): manda so o
+                    # comeco - instrucoes vem antes e os numeros-chave ficam no inicio
+                    texto = texto[:int(len(texto) * 0.6)]
+                    continue
+                if exc.code == 429 and tent < 2:
                     time.sleep(min(float(exc.headers.get("retry-after") or 10), 30))
                     continue
                 log.warning("Groq %s falhou p/ %s: HTTP %s", modelo,
