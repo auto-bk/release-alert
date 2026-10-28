@@ -978,9 +978,55 @@ def _clean_md(s):
     return re.sub(r"\n{3,}", "\n\n", s).strip()
 
 
+# Reserva do resumo: se o Gemini falhar numa rodada, o resto da rodada vai
+# direto p/ o Groq (sem esperar timeout de novo a cada item).
+_GEMINI_FORA = False
+GROQ_MODELOS = ("openai/gpt-oss-120b", "openai/gpt-oss-20b")
+_UA_NAVEGADOR = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                 "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+
+def _groq_summarize(prompt, item, cfg):
+    """Resumo pelo Groq (modelos abertos gpt-oss). gpt-oss e modelo de raciocinio:
+    reasoning_effort=low + max_tokens folgado, senao a resposta sai vazia.
+    Em 429 (limite) espera o retry-after uma vez; depois tenta o modelo menor."""
+    import urllib.error
+    gq = cfg.get("groq", {})
+    if not gq.get("enabled") or not gq.get("api_key"):
+        return None
+    for modelo in GROQ_MODELOS:
+        for tent in range(2):
+            body = {"model": modelo, "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.2, "max_tokens": 4096, "reasoning_effort": "low"}
+            req = urllib.request.Request(
+                "https://api.groq.com/openai/v1/chat/completions",
+                data=json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json",
+                         "Authorization": f"Bearer {gq['api_key']}",
+                         "User-Agent": _UA_NAVEGADOR})   # Cloudflare barra o UA do Python
+            try:
+                d = json.load(urllib.request.urlopen(req, timeout=60))
+                txt = (d["choices"][0]["message"].get("content") or "").strip()
+                if txt:
+                    return _clean_md(txt)
+                break                                     # vazio -> proximo modelo
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429 and tent == 0:
+                    time.sleep(min(float(exc.headers.get("retry-after") or 10), 30))
+                    continue
+                log.warning("Groq %s falhou p/ %s: HTTP %s", modelo,
+                            item.get("company"), exc.code)
+                break
+            except Exception as exc:
+                log.warning("Groq %s falhou p/ %s: %s", modelo, item.get("company"), exc)
+                break
+    return None
+
+
 def gemini_summarize(text, item, cfg):
+    global _GEMINI_FORA
     g = cfg.get("gemini", {})
-    if not g.get("enabled") or not g.get("api_key") or not text.strip():
+    if not text.strip():
         return None
     model = g.get("model", "gemini-2.5-flash")
     sem_md = ("NAO use formatacao markdown (nada de **, ##, *). Escreva texto "
@@ -1036,18 +1082,25 @@ def gemini_summarize(text, item, cfg):
                                  # gemini-2.5-flash "pensa" e consome o orcamento
                                  # de saida; desligar deixa tudo para a resposta.
                                  "thinkingConfig": {"thinkingBudget": 0}}}
-    for attempt in range(2):
-        try:
-            req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
-                                         headers={"Content-Type": "application/json"})
-            d = json.load(urllib.request.urlopen(req, timeout=90))
-            return _clean_md(d["candidates"][0]["content"]["parts"][0]["text"])
-        except Exception as exc:
-            if attempt == 0:                              # 1 retry (ex.: limite/min)
-                time.sleep(6)
-                continue
-            log.warning("Gemini falhou para %s: %s", item.get("company"), exc)
-            return None
+    if g.get("enabled") and g.get("api_key") and not _GEMINI_FORA:
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                             headers={"Content-Type": "application/json"})
+                d = json.load(urllib.request.urlopen(req, timeout=45))
+                return _clean_md(d["candidates"][0]["content"]["parts"][0]["text"])
+            except Exception as exc:
+                if attempt == 0:                          # 1 retry (ex.: limite/min)
+                    time.sleep(6)
+                    continue
+                log.warning("Gemini falhou para %s: %s -> usando Groq no resto da "
+                            "rodada", item.get("company"), exc)
+                _GEMINI_FORA = True
+    resumo = _groq_summarize(prompt, item, cfg)
+    if resumo:
+        return (resumo + "\n(Resumo feito pelo modelo reserva via Groq, porque o "
+                "Gemini estava indisponivel. Pode ser menos preciso.)")
+    return None
 
 
 def _lat1(s):
